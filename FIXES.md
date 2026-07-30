@@ -3,9 +3,50 @@
 Questo documento elenca i problemi trovati nel notebook originale
 (`Quadruplet_Network_for_attribute_recognition_and_person_re-ID.ipynb`, versione
 `29cbb3c`), come sono stati corretti, e cosa cambia nella nuova versione
-(`Quadruplet_Network_v2_improved.ipynb`).
+(`notebook_improved.ipynb`).
 
 La versione originale resta consultabile in git: `git show 29cbb3c:Quadruplet_Network_for_attribute_recognition_and_person_re-ID.ipynb`.
+
+## Stato rispetto a `IMPROVEMENT_PLAN.md` (branch `dev`)
+
+**Fase 0 — bug fix: 11/11 completati.** BUG-0 → §1.1, BUG-1 → §1.2, BUG-2 → §2.1,
+BUG-3 → §1.3, BUG-4 → §1.4, BUG-5 → §2.2, BUG-6 → §2.20, BUG-7 → §1.3,
+BUG-8 → §2.3, BUG-9 → §1.5, BUG-10 → §2.6. Applicati sia al notebook sia a
+`quadruplet_network.py`.
+
+**Fase 2 — miglioramenti: 12/12 implementati.**
+
+| | | dove |
+|---|---|---|
+| F2-1 | BNNeck + ID head + label smoothing | `ReIDNet` |
+| F2-2 | P×K sampler + batch-hard quadruplet (P=12, K=4, margini 0.3/0.15) | `PKSampler`, `QuadrupletLoss` |
+| F2-3 | warmup + cosine + AdamW | `WarmupCosine`, `build_optimizer` |
+| F2-4 | Random Erasing (iperparametri del paper) | `train_tfms` |
+| F2-5 | `pos_weight` BCE (cap ×20) + metrica **mA** | `AttributesLoss`, `attribute_metrics` |
+| F2-6 | best checkpoint + early stopping + L2-norm | `fit`, `extract_features` |
+| F2-7 | flip test-time augmentation | `extract_features(flip=True)` |
+| F2-8 | k-reciprocal re-ranking | `re_ranking.py` + `rank_gallery(re_rank=True)` |
+| F2-9 | GeM pooling | `GeM` |
+| F2-10 | AMP | `torch.autocast` + `GradScaler` |
+| F2-11 | Circle Loss (variante isolata) | `CircleLoss`, `metric_loss='circle'` |
+| F2-12 | IBN-a (opzionale, richiede `timm`) | `ReIDNet._build_trunk`, `ibn=True` |
+
+Presenti anche lo scaffold della **tabella di ablation** (`run_ablation`) e la
+sezione sul protocollo di valutazione richiesta per il report (§12 del notebook).
+
+**Scostamenti consapevoli dal piano:**
+
+- il notebook migliorato usa **ResNet50** come default (il piano assumeva
+  ResNet18 su Colab T4). Su una 4070 8 GB con AMP ci sta: ~4 GB. `backbone` è in
+  config, quindi la riga di ablation con ResNet18 resta disponibile;
+- **30 epoche** di default invece di 60, con warmup 3 invece di 10 (stessa
+  proporzione). Con early stopping a `patience=8` la differenza è marginale;
+- la verifica #3 del piano ("mAP@20 prima del training ~0.02–0.05") va letta
+  tenendo conto che **mAP@20 è limitata superiormente da ~0.25** su questo split:
+  le query hanno in media ~20 immagini rilevanti in gallery e la lista è troncata
+  a 20, quindi anche un ranking perfetto non arriva a 1. Le soglie ">40%" e
+  ">60%" del piano vanno riferite alla **mAP piena**, che il notebook riporta
+  accanto a quella troncata.
 
 ---
 
@@ -141,6 +182,8 @@ portava le predizioni di un'altra immagine.
 | 2.17 | `optimizer.zero_grad()` chiamato *dopo* `step()`: funziona solo perché l'ordine è ciclico, ma con un `continue` o un'eccezione i gradienti di due batch si sommano | `zero_grad(set_to_none=True)` all'inizio dell'iterazione |
 | 2.18 | `pretrained=True` rimosso nelle torchvision recenti | `weights='DEFAULT'` con fallback |
 | 2.19 | `image_feature` senza `torch.no_grad()` proprio (dipendeva dal chiamante) e accumulava tutte le feature in VRAM | decoratore `@torch.no_grad()`, feature spostate su CPU |
+| 2.20 | **BUG-6** — `AttributesLoss` **somma** le 29 loss (~0.6 ciascuna → ~17). Con λ=0.8 il termine attributi vale ~14 contro ~0.2 del quadruplet: il segnale di metric learning, cioè il punto dell'architettura, era ~70× troppo piccolo per contare | media sulle teste; λ diventa interpretabile e indipendente dal numero di attributi |
+| 2.21 | I due negativi potevano appartenere alla **stessa** identità, rendendo rumore il secondo termine del quadruplet (che serve proprio ad allontanare due identità negative) | vincolo esplicito `ids[n1] != ids[n2]` |
 
 ---
 
@@ -194,8 +237,7 @@ Non sono bug, ma limitano quello che si può concludere dai risultati.
 
 ## 5. Cosa aggiunge la v2
 
-Il notebook `Quadruplet_Network_v2_improved.ipynb` è una riscrittura, non una
-patch. Impianto:
+Il notebook `notebook_improved.ipynb` è una riscrittura, non una patch. Impianto:
 
 - **PK sampler** (`P` identità × `K` immagini) + **quadruplet loss con batch-hard
   mining**: positivo più lontano, negativo più vicino, e per il secondo termine la
@@ -234,8 +276,8 @@ numero di immagini per step.
 |---|---|---|---|---|
 | v1 così com'è (ResNet18, 4 forward × 48, 224×224, fp32) | 192 | 224×224 | no | ~6.5 GB — **entra ma al limite** |
 | v1 corretto (ResNet18, 1 forward × 128, 256×128, AMP) | 128 | 256×128 | sì | ~2.2 GB |
-| v2 preset default (ResNet50, `last_stride=1`, 16×4) | 64 | 256×128 | sì | ~5.2 GB |
-| v2 ResNet50 senza AMP | 64 | 256×128 | no | ~9.5 GB — **OOM** |
+| v2 preset default (ResNet50, `last_stride=1`, 12×4) | 48 | 256×128 | sì | ~4.0 GB |
+| v2 ResNet50 senza AMP | 48 | 256×128 | no | ~7.4 GB — al limite |
 | v2 preset leggero (ResNet18, `last_stride=2`, 24×4) | 96 | 256×128 | sì | ~1.9 GB |
 
 Le stime sono da calcolo analitico (attivazioni ≈ 28 MB/immagine per ResNet18 a

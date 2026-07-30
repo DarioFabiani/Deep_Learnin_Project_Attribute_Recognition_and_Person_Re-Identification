@@ -9,12 +9,15 @@ Two tasks on 64×128 pedestrian crops:
 
 ## Notebooks
 
-| notebook | cos'è |
+| file | cos'è |
 |---|---|
 | `Quadruplet_Network_for_attribute_recognition_and_person_re-ID.ipynb` | il notebook originale, **corretto**. Stessa architettura, stessa struttura, stesse loss; sono stati risolti i bug che rendevano i risultati privi di significato. Ogni correzione è marcata con un commento `# FIX:`. |
-| `Quadruplet_Network_v2_improved.ipynb` | riscrittura con la ricetta moderna: PK sampler + hard mining, BNNeck, testa ID, GeM, AdamW + cosine, AMP, metriche complete (mAP, CMC, F1 per attributo). |
+| `notebook_improved.ipynb` | riscrittura con la ricetta moderna: PK sampler + batch-hard mining, BNNeck, testa ID, GeM, AdamW + warmup/cosine, AMP, re-ranking k-reciprocal, metriche complete (mAP, CMC, mA/F1 per attributo) e scaffold per la tabella di ablation. |
+| `quadruplet_network.py` | versione script del notebook corretto (era su `dev`, aggiornata con i fix mancanti). |
+| `re_ranking.py` | k-reciprocal re-ranking (Zhong et al., CVPR 2017), usato dal notebook migliorato. |
 
-`FIXES.md` documenta tutti i bug trovati, il loro impatto e le note hardware.
+`FIXES.md` documenta tutti i bug trovati, il loro impatto, la mappatura rispetto a
+`IMPROVEMENT_PLAN.md` e le note hardware.
 
 ## Come eseguirli
 
@@ -45,8 +48,8 @@ Non c'è più alcuna dipendenza da `google.colab`: le celle specifiche di Colab
 
 ## Requisiti hardware
 
-Il preset di default della v2 (ResNet50, `last_stride=1`, 64 immagini per step,
-256×128, AMP) usa circa **5.2 GB di VRAM** e gira in ~2–3 min/epoca su una RTX
+Il preset di default della v2 (ResNet50, `last_stride=1`, 48 immagini per step,
+256×128, AMP) usa circa **4 GB di VRAM** e gira in ~2–3 min/epoca su una RTX
 4070 Laptop. Per GPU più piccole:
 
 ```python
